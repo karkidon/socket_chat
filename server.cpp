@@ -1,56 +1,111 @@
-/* A simple server in the internet domain using TCP
-   The port number is passed as an argument */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/types.h> 
+#include <iostream>
+#include <algorithm>
+#include <set>
+
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <vector>
+#include <unistd.h>
+#include <fcntl.h>
+#include <poll.h>
 
-void error(const char *msg)
+#include <sys/epoll.h>
+
+#include <errno.h>
+#include <string.h>
+
+#define MAX_EVENTS 32
+
+int set_nonblock(int fd)
 {
-    perror(msg);
-    exit(1);
+    int flags;
+#if defined(O_NONBLOCK)
+    if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
+        flags = 0;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+#else
+    flags = 1;
+	return ioctl(fd, FIOBIO, &flags);
+#endif
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
-     int sockfd, newsockfd, portno;
-     socklen_t clilen;
-     char buffer[256];
-     struct sockaddr_in serv_addr, cli_addr;
-     int n;
-     if (argc < 2) {
-         fprintf(stderr,"ERROR, no port provided\n");
-         exit(1);
-     }
-     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-     if (sockfd < 0) 
-        error("ERROR opening socket");
-     bzero((char *) &serv_addr, sizeof(serv_addr));
-     portno = atoi(argv[1]);
-     serv_addr.sin_family = AF_INET;
-     serv_addr.sin_addr.s_addr = INADDR_ANY;
-     serv_addr.sin_port = htons(portno);
-     if (bind(sockfd, (struct sockaddr *) &serv_addr,
-              sizeof(serv_addr)) < 0) 
-              error("ERROR on binding");
-     listen(sockfd,5);
-     clilen = sizeof(cli_addr);
-     newsockfd = accept(sockfd, 
-                 (struct sockaddr *) &cli_addr, 
-                 &clilen);
-     if (newsockfd < 0) 
-          error("ERROR on accept");
-     bzero(buffer,256);
-     n = read(newsockfd,buffer,255);
-     if (n < 0) error("ERROR reading from socket");
-     printf("Here is the message: %s\n",buffer);
-     n = write(newsockfd,"I got your message",18);
-     if (n < 0) error("ERROR writing to socket");
-     close(newsockfd);
-     close(sockfd);
-     return 0; 
+    int MasterSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    if(MasterSocket == -1)
+    {
+        std::cout << strerror(errno) << std::endl;
+        return 1;
+    }
+
+    struct sockaddr_in SockAddr;
+    SockAddr.sin_family = AF_INET;
+    SockAddr.sin_port = htons(60000 );
+    SockAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    int Result = bind(MasterSocket, (struct sockaddr *)&SockAddr, sizeof(SockAddr));
+
+    if(Result == -1)
+    {
+        std::cout << strerror(errno) << std::endl;
+        return 1;
+    }
+
+    set_nonblock(MasterSocket);
+
+    Result = listen(MasterSocket, SOMAXCONN);
+
+    if(Result == -1)
+    {
+        std::cout << strerror(errno) << std::endl;
+        return 1;
+    }
+
+    struct epoll_event Event;
+    Event.data.fd = MasterSocket;
+    Event.events = EPOLLIN | EPOLLET;
+
+    struct epoll_event * Events;
+    Events = (struct epoll_event *) calloc(MAX_EVENTS, sizeof(struct epoll_event));
+
+    int EPoll = epoll_create1(0);
+    epoll_ctl(EPoll, EPOLL_CTL_ADD, MasterSocket, &Event);
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
+    while(true)
+    {
+        int N = epoll_wait(EPoll, Events, MAX_EVENTS, 500);
+        fprintf(stderr, "empty poll\n");
+        for(unsigned int i = 0; i < N; i++)
+        {
+            fprintf(stderr, "message in\n");
+            if((Events[i].events & EPOLLERR)||(Events[i].events & EPOLLHUP))
+            {
+                shutdown(Events[i].data.fd, SHUT_RDWR);
+                close(Events[i].data.fd);
+            }
+            else if(Events[i].data.fd == MasterSocket)
+            {
+                int SlaveSocket = accept(MasterSocket, 0, 0);
+                set_nonblock(SlaveSocket);
+
+                struct epoll_event Event;
+                Event.data.fd = SlaveSocket;
+                Event.events = EPOLLIN | EPOLLET;
+
+                epoll_ctl(EPoll, EPOLL_CTL_ADD, SlaveSocket, &Event);
+            }
+            else
+            {
+                static char Buffer[1024];
+                int RecvSize = recv(Events[i].data.fd, Buffer, 1024, MSG_NOSIGNAL);
+                send(Events[i].data.fd, Buffer, RecvSize, MSG_NOSIGNAL);
+            }
+        }
+    }
+#pragma clang diagnostic pop
+
+    return 0;
 }
