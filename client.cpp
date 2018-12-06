@@ -30,7 +30,7 @@ using namespace std;
 // Default port
 #define SERVER_PORT 44444
 
-// seChat server ip, you should change it to your own server ip address
+// server ip, you should change it to your own server ip address
 #define SERVER_HOST "127.0.0.1"
 
 // Default timeout - http://linux.die.net/man/2/epoll_wait
