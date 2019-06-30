@@ -12,9 +12,34 @@
 #include <stdio.h>
 #include <list>
 #include <time.h>
+#include <map>
+#include <crypto++/cryptlib.h>
+#include <crypto++/secblock.h>
+#include <crypto++/hrtimer.h>
+#include <crypto++/osrng.h>
+#include <crypto++/modes.h>
+#include <crypto++/aes.h>
+#include <crypto++/files.h>
 
-using namespace std;
 
+//namespace resolution
+using std::cout;
+using std::endl;
+using std::string;
+using std::map;
+using std::vector;
+using std::list;
+using std::to_string;
+using CryptoPP::AutoSeededRandomPool;
+using CryptoPP::ArraySource;
+using CryptoPP::CFB_Mode;
+using CryptoPP::AES;
+using CryptoPP::FileSource;
+using CryptoPP::FileSink;
+using CryptoPP::ArraySink;
+
+
+//colors
 #define RED   "\x1B[31m"
 #define GRN   "\x1B[32m"
 #define YEL   "\x1B[33m"
@@ -24,48 +49,70 @@ using namespace std;
 #define DEF   "\x1B[0m"
 
 
+//server settings
 #define BUF_SIZE 4096
-
-
 #define SERVER_PORT 44444
-
-
 #define SERVER_HOST "127.0.0.1"
-
-
 #define SERVER_USER_LIMIT 30
-
-
 #define EPOLL_RUN_TIMEOUT -1
-
-
 #define EPOLL_SIZE 10000
 
 
-#define STR_WELCOME "Welcome! You ID is: Client #%d"
-
-
+//string patterns
+#define STR_WELCOME "Welcome! You username is: @"
 #define STR_DISCONNECT "Server is full. Bye."
+#define STR_NO_ONE_CONNECTED (MAG "No one connected to server except you!" DEF)
 
 
-#define STR_MESSAGE "Client #%d>> %s"
-
-
-#define STR_NO_ONE_CONNECTED "No one connected to server except you!"
-
+//socket eval macros
 #define CHK(eval) if(eval < 0){perror("eval"); exit(-1);}
-
 #define CHK2(res, eval) if((res = eval) < 0){perror("eval"); exit(-1);}
 
+
+//chat settings
+#define CMD_ONLINE "@online"
+#define CMD_SET_USERNAME "@name"
+#define HISTORY_LEN 10
+
+
+//encryption stuff
+#define KEY_LEN AES::DEFAULT_KEYLENGTH
+byte AES_KEY[KEY_LEN];
+
+#define IV_LEN AES::BLOCKSIZE
+byte IV[IV_LEN];
+
+CFB_Mode<AES>::Encryption *AESEncryption;
+CFB_Mode<AES>::Decryption *AESDecryption;
+
+
+//functions predeclared
 int set_non_blocking(int sockfd);
 
 void debug_epoll_event(epoll_event ev);
 
 int handle_message(int client);
 
+
+//general globals
+list<int> clients_list;
+map<int, string> username_dict;
+vector<string> message_history;
+
+int DEBUG_MODE = 0;
+
+struct Args {
+    int d;
+    int p;
+    int u;
+    int k;
+    char ip[16];
+};
+
+
+// implementation
 void debug_epoll_event(epoll_event ev) {
     printf("fd(%d), ev.events:", ev.data.fd);
-
     if (ev.events & EPOLLIN)
         printf(" EPOLLIN ");
     if (ev.events & EPOLLOUT)
@@ -90,28 +137,13 @@ void debug_epoll_event(epoll_event ev) {
         printf(" EPOLLHUP ");
     if (ev.events & EPOLLONESHOT)
         printf(" EPOLLONESHOT ");
-
     printf("\n");
-
 }
-
 
 int set_non_blocking(int sockfd) {
-    CHK(fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK));
+    CHK(fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK)) // NOLINT(hicpp-signed-bitwise)
     return 0;
 }
-
-
-list<int> clients_list;
-
-int DEBUG_MODE = 0;
-
-struct Args {
-    int d;
-    int p;
-    int u;
-    char ip[16];
-};
 
 void print_help() {
     printf("Usage: server [OPTION]\n"
@@ -137,6 +169,8 @@ int parse_argument(Args *args, const char *arg) {
         args->u = (int) strtol(arg + 3, nullptr, 10);
     } else if (strncmp(arg, "--userlimit=", 12) == 0) {
         args->u = (int) strtol(arg + 12, nullptr, 10);
+    } else if (strncmp(arg, "--gen-key", 9) == 0) {
+        args->k = 1;
     } else if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
         print_help();
         exit(0);
@@ -148,6 +182,53 @@ int parse_argument(Args *args, const char *arg) {
     return 1;
 }
 
+string gen_history() {
+    string result;
+    size_t offset = message_history.size() < HISTORY_LEN ? 0 : message_history.size() - HISTORY_LEN;
+    for (auto it = message_history.begin() + offset; it != message_history.end(); it++) {
+        result += *it + "\n";
+    }
+    return result;
+}
+
+void generate_key() {
+    AutoSeededRandomPool rnd;
+    rnd.GenerateBlock(AES_KEY, KEY_LEN);
+    rnd.GenerateBlock(IV, IV_LEN);
+
+    ArraySource(AES_KEY, sizeof(AES_KEY), true, new FileSink("key"));
+    ArraySource(IV, sizeof(IV), true, new FileSink("iv"));
+}
+
+void init_encryption() {
+    FileSource("key", true, new ArraySink(AES_KEY, sizeof(AES_KEY))); // NOLINT(bugprone-unused-raii)
+    FileSource("iv", true, new ArraySink(IV, sizeof(IV))); // NOLINT(bugprone-unused-raii)
+    AESEncryption = new CFB_Mode<AES>::Encryption(AES_KEY, KEY_LEN, IV);
+    AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
+}
+
+void reinit_encryption() {
+    delete AESEncryption;
+    delete AESDecryption;
+    AESEncryption = new CFB_Mode<AES>::Encryption(AES_KEY, KEY_LEN, IV);
+    AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
+}
+
+void encrypt(char *message) {
+    reinit_encryption();
+    byte enc_buf[BUF_SIZE];
+    memcpy(enc_buf, message, BUF_SIZE);
+    AESEncryption->ProcessData(enc_buf, enc_buf, BUF_SIZE);
+    memcpy(message, enc_buf, BUF_SIZE);
+}
+
+void decrypt(char *message) {
+    reinit_encryption();
+    byte enc_buf[BUF_SIZE];
+    memcpy(enc_buf, message, BUF_SIZE);
+    AESDecryption->ProcessData(enc_buf, enc_buf, BUF_SIZE);
+    memcpy(message, enc_buf, BUF_SIZE);
+}
 
 int main(int argc, char *argv[]) {
 
@@ -186,9 +267,14 @@ int main(int argc, char *argv[]) {
             printf(" argv[%d] = %s\n", i, argv[i]);
     } else printf("Debug mode is OFF!\n");
 
+    if (args.k) {
+        generate_key();
+        return 0;
+    }
+
+    init_encryption();
 
     int listener;
-
 
     struct sockaddr_in addr{}, their_addr{};
 
@@ -209,36 +295,34 @@ int main(int argc, char *argv[]) {
 
     clock_t tStart;
 
-
     int client, res, epoll_events_count;
 
 
-
-    CHK2(listener, socket(PF_INET, SOCK_STREAM, 0));
+    CHK2(listener, socket(PF_INET, SOCK_STREAM, 0))
     printf("Main listener(fd=%d) created! \n", listener);
 
     set_non_blocking(listener);
 
 
-    CHK(bind(listener, (struct sockaddr *) &addr, sizeof(addr)));
+    CHK(bind(listener, (struct sockaddr *) &addr, sizeof(addr)))
     printf("Listener bound to: %s\n", args.ip);
 
-    CHK(listen(listener, 1));
+    CHK(listen(listener, 1))
     printf("Start to listen: %s!\n", args.ip);
 
-    CHK2(epfd, epoll_create(EPOLL_SIZE));
+    CHK2(epfd, epoll_create(EPOLL_SIZE))
     printf("Epoll(fd=%d) created!\n", epfd);
 
 
     ev.data.fd = listener;
 
-   
-    CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, listener, &ev));
+
+    CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, listener, &ev))
     printf("Main listener(%d) added to epoll!\n", epfd);
 
 
     while (true) {
-        CHK2(epoll_events_count, epoll_wait(epfd, events, EPOLL_SIZE, EPOLL_RUN_TIMEOUT));
+        CHK2(epoll_events_count, epoll_wait(epfd, events, EPOLL_SIZE, EPOLL_RUN_TIMEOUT))
         if (DEBUG_MODE) printf("Epoll events count: %d\n", epoll_events_count);
 
         tStart = clock();
@@ -250,40 +334,42 @@ int main(int argc, char *argv[]) {
 
             }
             if (events[i].data.fd == listener) {
-                CHK2(client, accept(listener, (struct sockaddr *) &their_addr, &socklen));
+                CHK2(client, accept(listener, (struct sockaddr *) &their_addr, &socklen))
                 if (DEBUG_MODE)
                     printf("connection from:%s:%d, socket assigned to:%d \n",
                            inet_ntoa(their_addr.sin_addr),
                            ntohs(their_addr.sin_port),
                            client);
-               
+
                 set_non_blocking(client);
 
-                
+
                 ev.data.fd = client;
 
-              
-                CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, client, &ev));
+
+                CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, client, &ev))
 
                 int disconnect = 0;
 
                 if (clients_list.size() < args.u) {
                     clients_list.push_back(client);
+                    username_dict[client] = to_string(client);
                 } else {
                     disconnect = 1;
                 }
 
-                if (DEBUG_MODE)
-                    printf("Add new client(fd = %d) to epoll and now clients_list.size = %d\n",
-                           client,
+                if (DEBUG_MODE) {
+                    printf("Add new client(fd = %d) to epoll and now %d online\n", client,
                            static_cast<int>(clients_list.size()));
+                }
 
-               
+
                 bzero(message, BUF_SIZE);
                 if (!disconnect) {
-                    res = sprintf(message, STR_WELCOME, client);
+                    string builder = STR_WELCOME + to_string(client) + "\n" + gen_history();
+                    res = snprintf(message, BUF_SIZE, "%s%s%s", YEL, builder.c_str(), DEF);
                 } else {
-                    res = sprintf(message, STR_DISCONNECT);
+                    res = snprintf(message, BUF_SIZE, STR_DISCONNECT);
                 }
 
 
@@ -291,7 +377,8 @@ int main(int argc, char *argv[]) {
                     printf("%d\n", res);
                 }
 
-                CHK2(res, send(client, message, BUF_SIZE, 0));
+                encrypt(message);
+                CHK2(res, send(client, message, BUF_SIZE, 0))
 
 
                 if (disconnect) {
@@ -303,80 +390,140 @@ int main(int argc, char *argv[]) {
                         if (*it != client) {
                             char msg[256];
                             bzero(msg, 256);
-                            sprintf(msg, "Client #%d has joined chat", client);
-                            CHK(send(*it, msg, BUF_SIZE, 0));
+                            snprintf(msg, BUF_SIZE, "%sClient #%d has joined chat%s", BLU, client, DEF);
+                            encrypt(msg);
+                            CHK(send(*it, msg, BUF_SIZE, 0))
                         }
                     }
                 }
 
-            } else { 
-                CHK2(res, handle_message(events[i].data.fd));
+            } else {
+                CHK2(res, handle_message(events[i].data.fd))
             }
         }
-       
+
         printf("Statistics: %d events handled at: %.2f second(s)\n",
                epoll_events_count,
                (double) (clock() - tStart) / CLOCKS_PER_SEC);
     }
-
-
 }
 
-
 int handle_message(int client) {
-    
+
     char buf[BUF_SIZE], message[BUF_SIZE + 13];
     bzero(buf, BUF_SIZE);
     bzero(message, BUF_SIZE);
 
-   
     int len;
 
-   
-    if (DEBUG_MODE) printf("Try to read from fd(%d)\n", client);
-    CHK2(len, recv(client, buf, BUF_SIZE, 0));
 
-    
+    if (DEBUG_MODE) printf("Try to read from fd(%d)\n", client);
+    CHK2(len, recv(client, buf, BUF_SIZE, 0))
+    decrypt(buf);
+
     if (len == 0) {
-        CHK(close(client));
+        CHK(close(client))
         clients_list.remove(client);
+        username_dict.erase(client);
 
         list<int>::iterator it;
         for (it = clients_list.begin(); it != clients_list.end(); it++) {
             char msg[256];
             bzero(msg, 256);
-            sprintf(msg, "Client #%d has left chat", client);
-            CHK(send(*it, msg, BUF_SIZE, 0));
+            snprintf(msg, BUF_SIZE, "%sClient #%d has left chat%s", BLU, client, DEF);
+            encrypt(msg);
+            CHK(send(*it, msg, BUF_SIZE, 0))
         }
 
         if (DEBUG_MODE)
-            printf("Client with fd: %d closed! And now clients_list.size = %d\n", client,
-                   static_cast<int>(clients_list.size()));
-        
+            printf("Client with fd: %d closed! %d online\n", client, static_cast<int>(clients_list.size()));
+
     } else {
 
+        if (strncmp(buf, CMD_ONLINE, strlen(CMD_ONLINE)) == 0) {
+
+            string builder = "People online: ";
+
+            list<int>::iterator it;
+            for (it = clients_list.begin(); it != clients_list.end(); it++) {
+                builder.append(username_dict[*it] + " ");
+            }
+
+            sprintf(message, "%s%s%s", RED, builder.c_str(), DEF);
+            encrypt(message);
+            CHK(send(client, message, BUF_SIZE, 0))
+            if (DEBUG_MODE) printf("Message '%s' send to client with fd(%d) \n", message, client);
+
+            return len;
+        }
+
+        if (strncmp(buf, CMD_SET_USERNAME, strlen(CMD_SET_USERNAME)) == 0) {
+            string username = buf + (strlen(CMD_SET_USERNAME) + 1);
+
+            list<int>::iterator it;
+            for (it = clients_list.begin(); it != clients_list.end(); it++) {
+                if (username_dict[*it] == username) {
+                    return len;
+                }
+            }
+
+            username_dict[client] = username;
+            return len;
+        }
+
         if (clients_list.size() == 1) { // this means that no one connected to server except YOU!
+            string builder = username_dict[client] + ">> " + buf;
+            message_history.emplace_back(builder);
             printf("%s\n", STR_NO_ONE_CONNECTED);
-            CHK(send(client, STR_NO_ONE_CONNECTED, strlen(STR_NO_ONE_CONNECTED), 0));
+            char tmp[BUF_SIZE];
+            strcpy(tmp, STR_NO_ONE_CONNECTED);
+            encrypt(tmp);
+            CHK(send(client, tmp, BUF_SIZE, 0))
             printf("%d\n", len);
             return len;
         }
 
-        sprintf(message, STR_MESSAGE, client, buf);
+        if (buf[0] == '@') { //private message
+            string username = buf;
+            size_t split = username.find_first_of(' ');
+            username = username.substr(1, split - 1);
 
-        
-        list<int>::iterator it;
-        for (it = clients_list.begin(); it != clients_list.end(); it++) {
-            if (*it != client) { 
-                CHK(send(*it, message, BUF_SIZE, 0));
-                if (DEBUG_MODE) printf("Message '%s' send to client with fd(%d) \n", message, *it);
+            string builder = GRN "[P]" + username_dict[client] + ">> " DEF + (buf + (split + 1));
+            //lookup username in dict
+            int client_id = -1;
+            for (auto &it : username_dict) {
+                if (it.second == username) {
+                    client_id = it.first;
+                }
             }
+
+            //user not found
+            if (client_id == -1) {
+                client_id = client; //redirect message to himself
+                builder = "SERVER: User " + username + " not found!";
+            }
+
+            //encrypt & send message
+            strncpy(message, builder.c_str(), BUF_SIZE);
+            encrypt(message);
+            CHK(send(client_id, message, BUF_SIZE, 0))
+            if (DEBUG_MODE) printf("Message '%s' send to client with fd(%d) \n", message, client_id);
+
+        } else { //broadcast
+            string builder = CYN + username_dict[client] + ">> " DEF + buf;
+            message_history.emplace_back(builder);
+            strncpy(message, builder.c_str(), BUF_SIZE);
+            list<int>::iterator it;
+            encrypt(message);
+            for (it = clients_list.begin(); it != clients_list.end(); it++) {
+                if (*it != client) {
+                    CHK(send(*it, message, BUF_SIZE, 0))
+                    if (DEBUG_MODE) printf("Message '%s' send to client with fd(%d) \n", message, *it);
+                }
+            }
+            if (DEBUG_MODE)
+                printf("Client(%d) received message successfully:'%s', total of %d bytes data\n", client, buf, len);
         }
-        if (DEBUG_MODE)
-            printf("Client(%d) received message successfully:'%s', a total of %d bytes data...\n",
-                   client,
-                   buf,
-                   len);
     }
 
     return len;

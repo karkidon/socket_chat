@@ -12,9 +12,33 @@
 #include <stdio.h>
 #include <list>
 #include <time.h>
+#include <crypto++/cryptlib.h>
+#include <crypto++/secblock.h>
+#include <crypto++/hrtimer.h>
+#include <crypto++/osrng.h>
+#include <crypto++/modes.h>
+#include <crypto++/aes.h>
+#include <crypto++/files.h>
 
-using namespace std;
 
+//namespace resolution
+using std::cout;
+using std::endl;
+using std::string;
+using std::map;
+using std::vector;
+using std::list;
+using std::to_string;
+using CryptoPP::AutoSeededRandomPool;
+using CryptoPP::ArraySource;
+using CryptoPP::CFB_Mode;
+using CryptoPP::AES;
+using CryptoPP::FileSource;
+using CryptoPP::FileSink;
+using CryptoPP::ArraySink;
+
+
+//colors
 #define RED   "\x1B[31m"
 #define GRN   "\x1B[32m"
 #define YEL   "\x1B[33m"
@@ -42,11 +66,20 @@ using namespace std;
 // Command to exit
 #define CMD_EXIT "EXIT"
 
-// Macros - exit in any error (eval < 0) case
-#define CHK(eval) if(eval < 0){perror("eval"); exit(-1);}
 
-// Macros - same as above, but save the result(res) of expression(eval)
+//socket eval macros
+#define CHK(eval) if(eval < 0){perror("eval"); exit(-1);}
 #define CHK2(res, eval) if((res = eval) < 0){perror("eval"); exit(-1);}
+
+//encryption stuff
+#define KEY_LEN AES::DEFAULT_KEYLENGTH
+byte AES_KEY[KEY_LEN];
+
+#define IV_LEN AES::BLOCKSIZE
+byte IV[IV_LEN];
+
+CFB_Mode<AES>::Encryption *AESEncryption;
+CFB_Mode<AES>::Decryption *AESDecryption;
 
 
 // chat message buffer
@@ -111,6 +144,36 @@ int parse_argument(Args *args, const char *arg) {
     return 1;
 }
 
+void init_encryption() {
+    FileSource("key", true, new ArraySink(AES_KEY, sizeof(AES_KEY))); // NOLINT(bugprone-unused-raii)
+    FileSource("iv", true, new ArraySink(IV, sizeof(IV))); // NOLINT(bugprone-unused-raii)
+    AESEncryption = new CFB_Mode<AES>::Encryption(AES_KEY, KEY_LEN, IV);
+    AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
+}
+
+void reinit_encryption() {
+    delete AESEncryption;
+    delete AESDecryption;
+    AESEncryption = new CFB_Mode<AES>::Encryption(AES_KEY, KEY_LEN, IV);
+    AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
+}
+
+void encrypt() {
+    reinit_encryption();
+    byte enc_buf[BUF_SIZE];
+    memcpy(enc_buf, message, BUF_SIZE);
+    AESEncryption->ProcessData(enc_buf, enc_buf, BUF_SIZE);
+    memcpy(message, enc_buf, BUF_SIZE);
+}
+
+void decrypt() {
+    reinit_encryption();
+    byte enc_buf[BUF_SIZE];
+    memcpy(enc_buf, message, BUF_SIZE);
+    AESDecryption->ProcessData(enc_buf, enc_buf, BUF_SIZE);
+    memcpy(message, enc_buf, BUF_SIZE);
+}
+
 int main(int argc, char *argv[]) {
 
     Args args{};
@@ -143,6 +206,8 @@ int main(int argc, char *argv[]) {
             printf(" argv[%d] = %s\n", i, argv[i]);
     } else printf("Debug mode is OFF!\n");
 
+    init_encryption();
+
     // *** Define values
     //     socket connection with server(sock)
     //     process ID(pid)
@@ -167,50 +232,50 @@ int main(int argc, char *argv[]) {
     int continue_to_work = 1;
 
     // *** Setup socket connection with server
-    CHK2(sock, socket(PF_INET, SOCK_STREAM, 0));
-    CHK(connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0);
+    CHK2(sock, socket(PF_INET, SOCK_STREAM, 0))
+    CHK(connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0)
 
     // *** Setup pipe to send messages from child process to parent
-    CHK(pipe(pipe_fd));
+    CHK(pipe(pipe_fd))
     if (DEBUG_MODE)
         printf("Created pipe with pipe_fd[0](read part): %d and pipe_fd[1](write part): % d\n",
                pipe_fd[0],
                pipe_fd[1]);
 
     // *** Create & configure epoll
-    CHK2(epfd, epoll_create(EPOLL_SIZE));
+    CHK2(epfd, epoll_create(EPOLL_SIZE))
     if (DEBUG_MODE) printf("Created epoll with fd: %d\n", epfd);
 
     //     add server connection(sock) to epoll to listen incoming messages from server
     ev.data.fd = sock;
-    CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, sock, &ev));
+    CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, sock, &ev))
     if (DEBUG_MODE) printf("Socket connection (fd = %d) added to epoll\n", sock);
 
     //     add read part of pipe(pipe_fd[0]) to epoll
     //     to listen incoming messages from child process
     ev.data.fd = pipe_fd[0];
-    CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, pipe_fd[0], &ev));
+    CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, pipe_fd[0], &ev))
     if (DEBUG_MODE) printf("Pipe[0] (read) with fd(%d) added to epoll\n", pipe_fd[0]);
 
     // Fork
-    CHK2(pid, fork());
-    switch (pid) {
+    CHK2(pid, fork())
+    switch (pid) { // NOLINT(hicpp-multiway-paths-covered)
         case 0: // child process
-            close(pipe_fd[0]); // we dont need read pipe anymore
+            close(pipe_fd[0]); // we don't need read pipe anymore
             printf("Enter 'exit' to exit\n");
             while (continue_to_work) {
                 bzero(&message, BUF_SIZE);
-                fgets(message, BUF_SIZE, stdin);
+                fgets(message, BUF_SIZE, stdin); //read from kbd
 
                 // close while cycle for 'exit' command
                 if (strncasecmp(message, CMD_EXIT, strlen(CMD_EXIT)) == 0) {
                     continue_to_work = 0;
                     // send user's message to parent process
-                } else CHK(write(pipe_fd[1], message, strlen(message) - 1));
+                } else CHK(write(pipe_fd[1], message, strlen(message) - 1))
             }
             break;
         default: //parent process
-            close(pipe_fd[1]); // we dont need write pipe anymore
+            close(pipe_fd[1]); // we don't need write pipe anymore
 
             // incoming epoll_wait's events count(epoll_events_count)
             // results of different functions(res)
@@ -218,7 +283,7 @@ int main(int argc, char *argv[]) {
 
             // *** Main cycle(epoll_wait)
             while (continue_to_work) {
-                CHK2(epoll_events_count, epoll_wait(epfd, events, 2, EPOLL_RUN_TIMEOUT));
+                CHK2(epoll_events_count, epoll_wait(epfd, events, 2, EPOLL_RUN_TIMEOUT))
                 if (DEBUG_MODE) printf("Epoll events count: %d\n", epoll_events_count);
 
                 for (int i = 0; i < epoll_events_count; i++) {
@@ -227,25 +292,30 @@ int main(int argc, char *argv[]) {
                     // EPOLLIN event from server( new message from server)
                     if (events[i].data.fd == sock) {
                         if (DEBUG_MODE) printf("Server sends new message!\n");
-                        CHK2(res, recv(sock, message, BUF_SIZE, 0));
+                        CHK2(res, recv(sock, message, BUF_SIZE, 0))
+                        decrypt();
 
                         // zero size of result means the server closed connection
                         if (res == 0) {
                             if (DEBUG_MODE) printf("Server closed connection: %d\n", sock);
-                            CHK(close(sock));
+                            CHK(close(sock))
                             continue_to_work = 0;
-                        } else printf("%s%s%s\n", YEL, message, DEF);
+                        } else {
+//                            printf("%s%s%s\n", YEL, message, DEF);
+                            printf("%s\n", message);
+                        }
 
                         // EPOLLIN event from child process(user's input message)
                     } else {
                         if (DEBUG_MODE) printf("New pipe event!\n");
-                        CHK2(res, read(events[i].data.fd, message, BUF_SIZE));
+                        CHK2(res, read(events[i].data.fd, message, BUF_SIZE))
 
                         // zero size of result means the child process going to exit
                         if (res == 0) continue_to_work = 0; // exit parent to
                             // send message to server
                         else {
-                            CHK(send(sock, message, BUF_SIZE, 0));
+                            encrypt();
+                            CHK(send(sock, message, BUF_SIZE, 0))
                         }
                     }
                 }
