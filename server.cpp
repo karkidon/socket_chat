@@ -22,7 +22,7 @@
 #include <crypto++/files.h>
 
 
-//namespace resolution
+// namespace resolution
 using std::cout;
 using std::endl;
 using std::string;
@@ -39,7 +39,7 @@ using CryptoPP::FileSink;
 using CryptoPP::ArraySink;
 
 
-//colors
+// colors
 #define RED   "\x1B[31m"
 #define GRN   "\x1B[32m"
 #define YEL   "\x1B[33m"
@@ -49,7 +49,7 @@ using CryptoPP::ArraySink;
 #define DEF   "\x1B[0m"
 
 
-//server settings
+// server settings
 #define BUF_SIZE 4096
 #define SERVER_PORT 44444
 #define SERVER_HOST "127.0.0.1"
@@ -58,24 +58,24 @@ using CryptoPP::ArraySink;
 #define EPOLL_SIZE 10000
 
 
-//string patterns
+// string patterns
 #define STR_WELCOME "Welcome! You username is: @"
 #define STR_DISCONNECT "Server is full. Bye."
 #define STR_NO_ONE_CONNECTED (MAG "No one connected to server except you!" DEF)
 
 
-//socket eval macros
+// socket eval macros
 #define CHK(eval) if(eval < 0){perror("eval"); exit(-1);}
 #define CHK2(res, eval) if((res = eval) < 0){perror("eval"); exit(-1);}
 
 
-//chat settings
+// chat settings
 #define CMD_ONLINE "@online"
 #define CMD_SET_USERNAME "@name"
 #define HISTORY_LEN 10
 
 
-//encryption stuff
+// encryption stuff
 #define KEY_LEN AES::DEFAULT_KEYLENGTH
 byte AES_KEY[KEY_LEN];
 
@@ -86,7 +86,7 @@ CFB_Mode<AES>::Encryption *AESEncryption;
 CFB_Mode<AES>::Decryption *AESDecryption;
 
 
-//functions predeclared
+// functions predeclared
 int set_non_blocking(int sockfd);
 
 void debug_epoll_event(epoll_event ev);
@@ -94,13 +94,14 @@ void debug_epoll_event(epoll_event ev);
 int handle_message(int client);
 
 
-//general globals
+// general globals
 list<int> clients_list;
 map<int, string> username_dict;
 vector<string> message_history;
 
 int DEBUG_MODE = 0;
 
+// "smart" way to store flags
 struct Args {
     int d;
     int p;
@@ -110,7 +111,7 @@ struct Args {
 };
 
 
-// implementation
+// socket debug messages
 void debug_epoll_event(epoll_event ev) {
     printf("fd(%d), ev.events:", ev.data.fd);
     if (ev.events & EPOLLIN)
@@ -140,11 +141,13 @@ void debug_epoll_event(epoll_event ev) {
     printf("\n");
 }
 
+// sets socket flags so recv() don't block the thread
 int set_non_blocking(int sockfd) {
     CHK(fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK)) // NOLINT(hicpp-signed-bitwise)
     return 0;
 }
 
+// prints help
 void print_help() {
     printf("Usage: server [OPTION]\n"
            "-v, --verbose\t\t\tDebug mode ON\n"
@@ -154,6 +157,7 @@ void print_help() {
            "-h, --help\t\t\tprint this and terminate\n");
 }
 
+// CLI argument parser
 int parse_argument(Args *args, const char *arg) {
     if (strncmp(arg, "-v", 2) == 0) {
         args->d = 1;
@@ -182,6 +186,7 @@ int parse_argument(Args *args, const char *arg) {
     return 1;
 }
 
+// generates history by client request
 string gen_history() {
     string result;
     size_t offset = message_history.size() < HISTORY_LEN ? 0 : message_history.size() - HISTORY_LEN;
@@ -191,6 +196,7 @@ string gen_history() {
     return result;
 }
 
+// generate symmetric keys to be exchanged
 void generate_key() {
     AutoSeededRandomPool rnd;
     rnd.GenerateBlock(AES_KEY, KEY_LEN);
@@ -200,6 +206,7 @@ void generate_key() {
     ArraySource(IV, sizeof(IV), true, new FileSink("iv"));
 }
 
+// reads encryption keys from files and creates objects
 void init_encryption() {
     FileSource("key", true, new ArraySink(AES_KEY, sizeof(AES_KEY))); // NOLINT(bugprone-unused-raii)
     FileSource("iv", true, new ArraySink(IV, sizeof(IV))); // NOLINT(bugprone-unused-raii)
@@ -207,6 +214,7 @@ void init_encryption() {
     AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
 }
 
+// this is a workaround for some weird bug
 void reinit_encryption() {
     delete AESEncryption;
     delete AESDecryption;
@@ -214,6 +222,7 @@ void reinit_encryption() {
     AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
 }
 
+// encryption function
 void encrypt(char *message) {
     reinit_encryption();
     byte enc_buf[BUF_SIZE];
@@ -222,6 +231,7 @@ void encrypt(char *message) {
     memcpy(message, enc_buf, BUF_SIZE);
 }
 
+// decryption function
 void decrypt(char *message) {
     reinit_encryption();
     byte enc_buf[BUF_SIZE];

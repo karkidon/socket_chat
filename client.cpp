@@ -301,7 +301,6 @@ int main(int argc, char *argv[]) {
                             CHK(close(sock))
                             continue_to_work = 0;
                         } else {
-//                            printf("%s%s%s\n", YEL, message, DEF);
                             printf("%s\n", message);
                         }
 
