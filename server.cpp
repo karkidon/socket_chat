@@ -154,6 +154,7 @@ void print_help() {
            "-p, --port\t\t\tspecify port\n"
            "-ip\t\t\t\tspecify ip\n"
            "-u=INT, --userlimit=INT\t\tset user limit\n"
+           "--gen-key=\t\t\tgenerate new encryption key\n"
            "-h, --help\t\t\tprint this and terminate\n");
 }
 
