@@ -8,6 +8,7 @@ Usage: server [OPTION]
   -p, --port specify port  
   -ip specify ip  
   -u=INT, --userlimit=INT set user limit  
+  --gen-key= generate new encryption key
   -h, --help print this and terminate  
   
 Usage: client [OPTION]  
