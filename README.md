@@ -1,6 +1,6 @@
 # socket_chat
 
-EPOLL based socket chat with AES encryption  
+EPOLL based socket chat with [AES](https://www.cryptopp.com/wiki/Advanced_Encryption_Standard) encryption  
   
 ```
 Usage: server [OPTION]  
