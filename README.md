@@ -2,9 +2,6 @@
 
 EPOLL based socket chat with AES encryption  
   
-At the moment the client and server are implemented without multithreading  
-  
-  
 ```
 Usage: server [OPTION]  
   -v, --verbose Debug mode ON  
