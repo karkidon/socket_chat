@@ -1,19 +1,58 @@
 # socket_chat
 
-<h1>Многопоточный сокет чат</h1>
+<h1>EPOLL based socket chat with AES encryption</h1>
 
-<p>На данный момент реализованы клиент и сервер без многопоточности</p>
-<p>Сервер принимает сообщения клиента и печатает их у себя в командной строке, в ответ клиенту посылается сообщение что его письмо было получено и клиент прекращает работу</p>
-<p>Далее планируется реализовать полностью многопоточный чат с помощью потоков, при обращении клиента к серверу, сервер будет выделять для общения с данным клиентом поток и принимать от него сообщения</p>
-<p>Приблизительные входные параметры для клиента:</p>
-<ul>
-<li>ip server</li>
-<li>port server</li>
-<li>user name</li>
-</ul>
+<p>At the moment the client and server are implemented without multithreading</p>
 
-<p>Приблизительные входные параметры для сервера:</p>
-<ul>
-<li>ip server</li>
-<li>port server</li>
-</ul>
+
+Usage: server [OPTION]
+  -v, --verbose\t\t\tDebug mode ON
+  -p, --port\t\t\tspecify port
+  -ip\t\t\t\tspecify ip
+  -u=INT, --userlimit=INT\t\tset user limit
+  -h, --help\t\t\tprint this and terminate
+  
+Usage: client [OPTION]
+  -v, --verbose\t\t\tDebug mode ON
+  -p, --port\t\t\tspecify port
+  -ip\t\t\t\tspecify ip
+  -m=INT, --maxmsglen=INT\t\tset user limit
+  -h, --help\t\t\tprint this and terminate
+
+License:
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org/>
+
+Encryption library used by this project:
+
+Crypto++® Library 8.2
+
+https://www.cryptopp.com/License.txt
+
+The Crypto++ Library (as a compilation) is currently licensed under the Boost
+Software License 1.0 (http://www.boost.org/users/license.html).
+
+Boost Software License - Version 1.0 - August 17th, 2003
