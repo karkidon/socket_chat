@@ -5,6 +5,7 @@ EPOLL based socket chat with AES encryption
 At the moment the client and server are implemented without multithreading  
   
   
+```
 Usage: server [OPTION]  
   -v, --verbose Debug mode ON  
   -p, --port specify port  
@@ -18,8 +19,9 @@ Usage: client [OPTION]
   -ip specify ip  
   -m=INT, --maxmsglen=INT set user limit  
   -h, --help print this and terminate  
+```
   
-License:  
+**License:**  
   
 This is free and unencumbered software released into the public domain.  
   
