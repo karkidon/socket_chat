@@ -21,7 +21,7 @@ Usage: client [OPTION]
 Available client commands:  
 `@online` - list users online  
 `@name new_nick_name` - set username as *new_nick_name*. Fails if user with the same name exists.  
-`@nickname` *private message text* - send private message. This message isn't kept in history.
+`@nickname private message text` - send private message. This message isn't kept in history.
   
 Server default settings:  
  Keeps last 10 public messages with names and sends them to newly connected clients.  
