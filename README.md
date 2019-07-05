@@ -1,23 +1,23 @@
 # socket_chat
 
-<h1>EPOLL based socket chat with AES encryption</h1>
-
-<p>At the moment the client and server are implemented without multithreading</p>
-
-
-Usage: server [OPTION]
-  -v, --verbose\t\t\tDebug mode ON
-  -p, --port\t\t\tspecify port
-  -ip\t\t\t\tspecify ip
-  -u=INT, --userlimit=INT\t\tset user limit
-  -h, --help\t\t\tprint this and terminate
+EPOLL based socket chat with AES encryption  
+  
+At the moment the client and server are implemented without multithreading  
+  
+  
+Usage: server [OPTION]  
+  -v, --verbose Debug mode ON  
+  -p, --port specify port  
+  -ip specify ip  
+  -u=INT, --userlimit=INT set user limit  
+  -h, --help print this and terminate  
   
 Usage: client [OPTION]
-  -v, --verbose\t\t\tDebug mode ON
-  -p, --port\t\t\tspecify port
-  -ip\t\t\t\tspecify ip
-  -m=INT, --maxmsglen=INT\t\tset user limit
-  -h, --help\t\t\tprint this and terminate
+  -v, --verbose Debug mode ON
+  -p, --port specify port
+  -ip specify ip
+  -m=INT, --maxmsglen=INT set user limit
+  -h, --help print this and terminate
 
 License:
 
