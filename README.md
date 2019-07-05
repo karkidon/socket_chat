@@ -16,8 +16,20 @@ Usage: client [OPTION]
   -ip specify ip  
   -m=INT, --maxmsglen=INT set user limit  
   -h, --help print this and terminate  
-```
+```  
   
+Available client commands:  
+`@online` - list users online  
+`@name new_nick_name` - set username as *new_nick_name*. Fails if user with the same name exists.  
+`@nickname` *private message text* - send private message. This message isn't kept in history.
+  
+Server default settings:  
+ Keeps last 10 public messages with names and sends them to newly connected clients.  
+ Limits users by 30, new connections rejected after the handshake.  
+ Default message limit: 4096 characters.  
+ Default port: 44444.  
+ Default ip: 127.0.0.1.  
+
 **License:**  
   
 This is free and unencumbered software released into the public domain.  
