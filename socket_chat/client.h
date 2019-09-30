@@ -23,7 +23,8 @@
 #include <crypto++/aes.h>
 #include <crypto++/files.h>
 
-//namespace resolution
+///@file
+///namespace resolution
 using std::cout;
 using std::endl;
 using std::string;
@@ -39,7 +40,7 @@ using CryptoPP::FileSource;
 using CryptoPP::FileSink;
 using CryptoPP::ArraySink;
 
-//colors
+///colors
 #define RED   "\x1B[31m"
 #define GRN   "\x1B[32m"
 #define YEL   "\x1B[33m"
@@ -49,29 +50,29 @@ using CryptoPP::ArraySink;
 #define DEF   "\x1B[0m"
 
 
-// Default buffer size
+/// Default buffer size
 #define BUF_SIZE 4096
 
-// Default port
+/// Default port
 #define SERVER_PORT 44444
 
-// server ip, you should change it to your own server ip address
+/// server ip, you should change it to your own server ip address
 #define SERVER_HOST "127.0.0.1"
 
-// Default timeout - http://linux.die.net/man/2/epoll_wait
+/// Default timeout - http:///linux.die.net/man/2/epoll_wait
 #define EPOLL_RUN_TIMEOUT -1
 
-// Count of connections that we are planning to handle (just hint to kernel)
+/// Count of connections that we are planning to handle (just hint to kernel)
 #define EPOLL_SIZE 10000
 
-// Command to exit
+/// Command to exit
 #define CMD_EXIT "EXIT"
 
-//socket eval macros
+///socket eval macros
 #define CHK(eval) if(eval < 0){perror("eval"); exit(-1);}
 #define CHK2(res, eval) if((res = eval) < 0){perror("eval"); exit(-1);}
 
-//encryption stuff
+///encryption stuff
 #define KEY_LEN AES::DEFAULT_KEYLENGTH
 byte AES_KEY[KEY_LEN];
 
@@ -82,13 +83,13 @@ CFB_Mode<AES>::Encryption *AESEncryption;
 CFB_Mode<AES>::Decryption *AESDecryption;
 
 
-// chat message buffer
+/// chat message buffer
 char message[BUF_SIZE];
 
-// for debug mode
+/// for debug mode
 int DEBUG_MODE = 0;
 
-// "smart" way to store flags
+/// "smart" way to store flags
 typedef struct {
     int d;
     int p;
@@ -96,4 +97,4 @@ typedef struct {
     char ip[16];
 } Args;
 
-#endif //SOCKET_CHAT_CLIENT_H
+#endif ///SOCKET_CHAT_CLIENT_H

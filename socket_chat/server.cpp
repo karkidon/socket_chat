@@ -1,7 +1,7 @@
 #include "server.h"
 
-
-// socket debug messages
+///@file
+/// socket debug messages
 void debug_epoll_event(epoll_event ev) {
     printf("fd(%d), ev.events:", ev.data.fd);
     if (ev.events & EPOLLIN)
@@ -31,13 +31,13 @@ void debug_epoll_event(epoll_event ev) {
     printf("\n");
 }
 
-// sets socket flags so recv() don't block the thread
+/// sets socket flags so recv() don't block the thread
 int set_non_blocking(int sockfd) {
-    CHK(fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK)) // NOLINT(hicpp-signed-bitwise)
+    CHK(fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK)) /// NOLINT(hicpp-signed-bitwise)
     return 0;
 }
 
-// prints help
+/// prints help
 void print_help() {
     printf("Usage: server [OPTION]\n"
            "-v, --verbose\t\t\tDebug mode ON\n"
@@ -48,8 +48,7 @@ void print_help() {
            "-h, --help\t\t\tprint this and terminate\n");
 }
 
-// CLI argument parser
-
+/// CLI argument parser
 int parse_argument(Args *args, const char *arg) {
     if (strncmp(arg, "-v", 2) == 0) {
         args->d = 1;
@@ -78,7 +77,7 @@ int parse_argument(Args *args, const char *arg) {
     return 1;
 }
 
-// generates history by client request
+/// generates history by client request
 string gen_history() {
     string result;
     size_t offset = message_history.size() < HISTORY_LEN ? 0 : message_history.size() - HISTORY_LEN;
@@ -88,7 +87,7 @@ string gen_history() {
     return result;
 }
 
-// generate symmetric keys to be exchanged
+/// generate symmetric keys to be exchanged
 void generate_key() {
     AutoSeededRandomPool rnd;
     rnd.GenerateBlock(AES_KEY, KEY_LEN);
@@ -98,15 +97,15 @@ void generate_key() {
     ArraySource(IV, sizeof(IV), true, new FileSink("iv"));
 }
 
-// reads encryption keys from files and creates objects
+/// reads encryption keys from files and creates objects
 void init_encryption() {
-    FileSource("key", true, new ArraySink(AES_KEY, sizeof(AES_KEY))); // NOLINT(bugprone-unused-raii)
-    FileSource("iv", true, new ArraySink(IV, sizeof(IV))); // NOLINT(bugprone-unused-raii)
+    FileSource("key", true, new ArraySink(AES_KEY, sizeof(AES_KEY))); /// NOLINT(bugprone-unused-raii)
+    FileSource("iv", true, new ArraySink(IV, sizeof(IV))); /// NOLINT(bugprone-unused-raii)
     AESEncryption = new CFB_Mode<AES>::Encryption(AES_KEY, KEY_LEN, IV);
     AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
 }
 
-// this is a workaround for some weird bug
+/// this is a workaround for some weird bug
 void reinit_encryption() {
     delete AESEncryption;
     delete AESDecryption;
@@ -114,7 +113,7 @@ void reinit_encryption() {
     AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
 }
 
-// encryption function
+/// encryption function
 void encrypt(char *message) {
     reinit_encryption();
     byte enc_buf[BUF_SIZE];
@@ -123,7 +122,7 @@ void encrypt(char *message) {
     memcpy(message, enc_buf, BUF_SIZE);
 }
 
-// decryption function
+/// decryption function
 void decrypt(char *message) {
     reinit_encryption();
     byte enc_buf[BUF_SIZE];
@@ -377,7 +376,7 @@ int handle_message(int client) {
             return len;
         }
 
-        if (clients_list.size() == 1) { // this means that no one connected to server except YOU!
+        if (clients_list.size() == 1) { /// this means that no one connected to server except YOU!
             string builder = username_dict[client] + ">> " + buf;
             message_history.emplace_back(builder);
             printf("%s\n", STR_NO_ONE_CONNECTED);
@@ -389,13 +388,13 @@ int handle_message(int client) {
             return len;
         }
 
-        if (buf[0] == '@') { //private message
+        if (buf[0] == '@') { ///private message
             string username = buf;
             size_t split = username.find_first_of(' ');
             username = username.substr(1, split - 1);
 
             string builder = GRN "[P]" + username_dict[client] + ">> " DEF + (buf + (split + 1));
-            //lookup username in dict
+            ///lookup username in dict
             int client_id = -1;
             for (auto &it : username_dict) {
                 if (it.second == username) {
@@ -403,19 +402,19 @@ int handle_message(int client) {
                 }
             }
 
-            //user not found
+            ///user not found
             if (client_id == -1) {
-                client_id = client; //redirect message to himself
+                client_id = client; ///redirect message to himself
                 builder = "SERVER: User " + username + " not found!";
             }
 
-            //encrypt & send message
+            ///encrypt & send message
             strncpy(message, builder.c_str(), BUF_SIZE);
             encrypt(message);
             CHK(send(client_id, message, BUF_SIZE, 0))
             if (DEBUG_MODE) printf("Message '%s' send to client with fd(%d) \n", message, client_id);
 
-        } else { //broadcast
+        } else { ///broadcast
             string builder = CYN + username_dict[client] + ">> " DEF + buf;
             message_history.emplace_back(builder);
             strncpy(message, builder.c_str(), BUF_SIZE);
@@ -449,7 +448,7 @@ TEST_CASE("Test args init") {
     CHECK(strlen(args.ip) == 0);
 }
 
-//-v, --verbose
+///-v, --verbose
 TEST_CASE("Test args verbose") {
     Args args{};
     parse_argument(&args, "-v");
@@ -468,7 +467,7 @@ TEST_CASE("Test args verbose") {
     CHECK(strlen(args.ip) == 0);
 }
 
-//-p, --port
+///-p, --port
 TEST_CASE("Test args port") {
     Args args{};
     parse_argument(&args, "-p=6969");
@@ -487,7 +486,7 @@ TEST_CASE("Test args port") {
     CHECK(strlen(args.ip) == 0);
 }
 
-//-u, --userlimit
+///-u, --userlimit
 TEST_CASE("Test args user limit") {
     Args args{};
     parse_argument(&args, "-u=42");
@@ -506,7 +505,7 @@ TEST_CASE("Test args user limit") {
     CHECK(strlen(args.ip) == 0);
 }
 
-//--gen-key
+///--gen-key
 TEST_CASE("Test args gen key") {
     Args args{};
     parse_argument(&args, "--gen-key");

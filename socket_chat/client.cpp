@@ -1,7 +1,7 @@
 #include "client.h"
 
-
-/*
+///@file
+/**
   We use 'fork' to make two process.
     Child process:
     - waiting for user's input message;
@@ -51,8 +51,8 @@ int parse_argument(Args *args, const char *arg) {
 }
 
 void init_encryption() {
-    FileSource("key", true, new ArraySink(AES_KEY, sizeof(AES_KEY))); // NOLINT(bugprone-unused-raii)
-    FileSource("iv", true, new ArraySink(IV, sizeof(IV))); // NOLINT(bugprone-unused-raii)
+    FileSource("key", true, new ArraySink(AES_KEY, sizeof(AES_KEY))); /// NOLINT(bugprone-unused-raii)
+    FileSource("iv", true, new ArraySink(IV, sizeof(IV))); /// NOLINT(bugprone-unused-raii)
     AESEncryption = new CFB_Mode<AES>::Encryption(AES_KEY, KEY_LEN, IV);
     AESDecryption = new CFB_Mode<AES>::Decryption(AES_KEY, KEY_LEN, IV);
 }
@@ -114,80 +114,80 @@ int main(int argc, char *argv[]) {
 
     init_encryption();
 
-    // *** Define values
-    //     socket connection with server(sock)
-    //     process ID(pid)
-    //     pipe between children & parent processes(pipe_fd)
-    //     epoll descriptor to watch events
+    /// *** Define values
+    ///     socket connection with server(sock)
+    ///     process ID(pid)
+    ///     pipe between children & parent processes(pipe_fd)
+    ///     epoll descriptor to watch events
     int sock, pid, pipe_fd[2], epfd;
 
-    //     define ip & ports for server(addr)
+    ///     define ip & ports for server(addr)
     struct sockaddr_in addr{};
     addr.sin_family = PF_INET;
     addr.sin_port = htons(args.p);
     addr.sin_addr.s_addr = inet_addr(args.ip);
 
-    //     event template for epoll_ctl(ev)
-    //     storage array for incoming events from epoll_wait(events)
-    //     and maximum events count could be 2
-    //     'sock' from server and 'pipe' from parent process(user inputs)
-    static struct epoll_event ev, events[2]; // Socket(in|out) & Pipe(in)
+    ///     event template for epoll_ctl(ev)
+    ///     storage array for incoming events from epoll_wait(events)
+    ///     and maximum events count could be 2
+    ///     'sock' from server and 'pipe' from parent process(user inputs)
+    static struct epoll_event ev, events[2]; /// Socket(in|out) & Pipe(in)
     ev.events = EPOLLIN | EPOLLET;
 
-    //     if it's zero, we should should down client
+    ///     if it's zero, we should should down client
     int continue_to_work = 1;
 
-    // *** Setup socket connection with server
+    /// *** Setup socket connection with server
     CHK2(sock, socket(PF_INET, SOCK_STREAM, 0))
     CHK(connect(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0)
 
-    // *** Setup pipe to send messages from child process to parent
+    /// *** Setup pipe to send messages from child process to parent
     CHK(pipe(pipe_fd))
     if (DEBUG_MODE)
         printf("Created pipe with pipe_fd[0](read part): %d and pipe_fd[1](write part): % d\n",
                pipe_fd[0],
                pipe_fd[1]);
 
-    // *** Create & configure epoll
+    /// *** Create & configure epoll
     CHK2(epfd, epoll_create(EPOLL_SIZE))
     if (DEBUG_MODE) printf("Created epoll with fd: %d\n", epfd);
 
-    //     add server connection(sock) to epoll to listen incoming messages from server
+    ///     add server connection(sock) to epoll to listen incoming messages from server
     ev.data.fd = sock;
     CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, sock, &ev))
     if (DEBUG_MODE) printf("Socket connection (fd = %d) added to epoll\n", sock);
 
-    //     add read part of pipe(pipe_fd[0]) to epoll
-    //     to listen incoming messages from child process
+    ///     add read part of pipe(pipe_fd[0]) to epoll
+    ///     to listen incoming messages from child process
     ev.data.fd = pipe_fd[0];
     CHK(epoll_ctl(epfd, EPOLL_CTL_ADD, pipe_fd[0], &ev))
     if (DEBUG_MODE) printf("Pipe[0] (read) with fd(%d) added to epoll\n", pipe_fd[0]);
 
-    // Fork
+    /// Fork
     CHK2(pid, fork())
-    switch (pid) { // NOLINT(hicpp-multiway-paths-covered)
-        case 0: // child process
-            close(pipe_fd[0]); // we don't need read pipe anymore
+    switch (pid) { /// NOLINT(hicpp-multiway-paths-covered)
+        case 0: /// child process
+            close(pipe_fd[0]); /// we don't need read pipe anymore
             printf("Enter 'exit' to exit\n");
             while (continue_to_work) {
                 bzero(&message, BUF_SIZE);
-                fgets(message, BUF_SIZE, stdin); //read from kbd
+                fgets(message, BUF_SIZE, stdin); ///read from kbd
 
-                // close while cycle for 'exit' command
+                /// close while cycle for 'exit' command
                 if (strncasecmp(message, CMD_EXIT, strlen(CMD_EXIT)) == 0) {
                     continue_to_work = 0;
-                    // send user's message to parent process
+                    /// send user's message to parent process
                 } else CHK(write(pipe_fd[1], message, strlen(message) - 1))
             }
             break;
-        default: //parent process
-            close(pipe_fd[1]); // we don't need write pipe anymore
+        default: ///parent process
+            close(pipe_fd[1]); /// we don't need write pipe anymore
 
-            // incoming epoll_wait's events count(epoll_events_count)
-            // results of different functions(res)
+            /// incoming epoll_wait's events count(epoll_events_count)
+            /// results of different functions(res)
             int epoll_events_count, res;
 
-            // *** Main cycle(epoll_wait)
+            /// *** Main cycle(epoll_wait)
             while (continue_to_work) {
                 CHK2(epoll_events_count, epoll_wait(epfd, events, 2, EPOLL_RUN_TIMEOUT))
                 if (DEBUG_MODE) printf("Epoll events count: %d\n", epoll_events_count);
@@ -195,13 +195,13 @@ int main(int argc, char *argv[]) {
                 for (int i = 0; i < epoll_events_count; i++) {
                     bzero(&message, BUF_SIZE);
 
-                    // EPOLLIN event from server( new message from server)
+                    /// EPOLLIN event from server( new message from server)
                     if (events[i].data.fd == sock) {
                         if (DEBUG_MODE) printf("Server sends new message!\n");
                         CHK2(res, recv(sock, message, BUF_SIZE, 0))
                         decrypt();
 
-                        // zero size of result means the server closed connection
+                        /// zero size of result means the server closed connection
                         if (res == 0) {
                             if (DEBUG_MODE) printf("Server closed connection: %d\n", sock);
                             CHK(close(sock))
@@ -210,14 +210,14 @@ int main(int argc, char *argv[]) {
                             printf("%s\n", message);
                         }
 
-                        // EPOLLIN event from child process(user's input message)
+                        /// EPOLLIN event from child process(user's input message)
                     } else {
                         if (DEBUG_MODE) printf("New pipe event!\n");
                         CHK2(res, read(events[i].data.fd, message, BUF_SIZE))
 
-                        // zero size of result means the child process going to exit
-                        if (res == 0) continue_to_work = 0; // exit parent to
-                            // send message to server
+                        /// zero size of result means the child process going to exit
+                        if (res == 0) continue_to_work = 0; /// exit parent to
+                            /// send message to server
                         else {
                             encrypt();
                             CHK(send(sock, message, BUF_SIZE, 0))
